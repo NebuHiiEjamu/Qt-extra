@@ -13,17 +13,37 @@
 #include <QTextStream>
 #endif
 
-#include "qtimhandler_p.hpp"
+#include "tim_p.hpp"
 
 #define SCALE5TO8(c) (((c) << 3) | ((c) >> 2))
 #define SCALE8TO5(c) (((c) & 0xf8) >> 3)
 
-bool QTimHandler::canRead() const
+QImageIOPlugin::Capabilities TIMPlugin::capabilities(QIODevice *dev, const QByteArray &fmt) const
+{
+  if (fmt == QByteArrayLiteral("tim")) return Capabilities(CanRead);
+  if (!fmt.isEmpty()) return 0;
+  if (!dev || !dev->isOpen()) return 0;
+  
+  Capabilities cap;
+  if (dev->isReadable() && TIMHandler::canRead(dev)) cap |= CanRead;
+  
+  return cap;
+}
+
+QImageIOHandler* TIMPlugin::create(QIODevice *dev, const QByteArray &fmt) const
+{
+  QImageIOHandler *hnd = new TIMHandler;
+  hnd->setDevice(dev);
+  hnd->setFormat(fmt);
+  return hnd;
+}
+
+bool TIMHandler::canRead() const
 {
 	return canRead(device());
 }
 
-bool QTimHandler::canRead(QIODevice *dev)
+bool TIMHandler::canRead(QIODevice *dev)
 {
 	return dev->peek(4) == QByteArrayLiteral("\x10\x0\x0\x0");
 }
@@ -38,7 +58,7 @@ static inline quint32 rgba5551ToArgb32(quint16 c)
 	return ((a << 24) | (r << 16) | (g << 8) | b);
 }
 
-bool QTimHandler::read(QImage *img)
+bool TIMHandler::read(QImage *img)
 {
 	QDataStream ds(device());
 	ds.setByteOrder(QDataStream::LittleEndian);
@@ -51,20 +71,9 @@ bool QTimHandler::read(QImage *img)
 	if (ds.status() != QDataStream::Ok || magic != 0x10)
 			return false;
 	bool hasClut = flags & 0x8 ? true : false;
-	quint8 pxlMode = flags & 0x7;
-	
-	quint8 bpp;
-	switch (pxlMode)
-	{
-		case 0: bpp = 4; break;
-		case 1: bpp = 8; break;
-		case 2: bpp = 16; break;
-		case 3: bpp = 24; break;
-		default: bpp = 4;
-	}
+  quint8 bpp = flags & 0x7 ? (flags & 0x7)*8 : 1;
 #ifndef QT_NO_DEBUG
 	qDebug() << "Has CLUT: " << hasClut;
-	qDebug() << "Pixel mode: " << pxlMode;
 	qDebug() << "Bits per pixel: " << bpp;
 #endif
 	
@@ -165,7 +174,7 @@ bool QTimHandler::read(QImage *img)
 	return ds.status() == QDataStream::Ok;
 }
 
-bool QTimHandler::supportsOption(ImageOption op) const
+bool TIMHandler::supportsOption(ImageOption op) const
 {
 	switch (op)
 	{
@@ -176,7 +185,7 @@ bool QTimHandler::supportsOption(ImageOption op) const
 	}
 }
 
-QVariant QTimHandler::option(ImageOption op) const
+QVariant TIMHandler::option(ImageOption op) const
 {
 	switch (op)
 	{
